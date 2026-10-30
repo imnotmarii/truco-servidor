@@ -28,7 +28,6 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // COLE AQUI O SEU LINK DO RENDER:
         const URL_SERVIDOR = "https://truco-servidor-1.onrender.com";
 
         const NAIPES = ['♣', '♥', '♠', '♦'];
@@ -36,13 +35,14 @@
 
         function App() {
             const [aba, setAba] = useState('jogo');
-            const [meuNome, setMeuNome] = useState(localStorage.getItem('truco_nome') || '');
-            const [modoJogo, setModoJogo] = useState(4);
+            const [meuNome, setMeuNome] = useState(localStorage.getItem('truco_nome') || 'Mari truqueira');
+            const [modoJogo, setModoJogo] = useState(6);
             const [equipeDesejada, setEquipeDesejada] = useState(1);
             
             const [salaId, setSalaId] = useState('');
             const [emSala, setEmSala] = useState(false);
             const [ehHost, setEhHost] = useState(false);
+            const [statusConexao, setStatusConexao] = useState('Conectando ao servidor...');
 
             const [jogadores, setJogadores] = useState([]);
             const [statusJogo, setStatusJogo] = useState('aguardando');
@@ -59,9 +59,17 @@
                     transports: ['websocket', 'polling']
                 });
 
+                socketRef.current.on('connect', () => {
+                    setStatusConexao('Servidor Conectado!');
+                });
+
+                socketRef.current.on('connect_error', () => {
+                    setStatusConexao('Aguardando servidor (pode levar 30s)...');
+                });
+
                 socketRef.current.on('ATUALIZAR_SALA', (sala) => {
                     setSalaId(sala.id);
-                    setJogadores(sala.jogadores);
+                    setJogadores(sala.jogadores || []);
                     setModoJogo(sala.modoJogo);
                     setEmSala(true);
                     setEhHost(sala.host === socketRef.current.id);
@@ -98,7 +106,12 @@
 
             const criarSala = () => {
                 if (!meuNome.trim()) return alert('Digite seu apelido!');
+                if (!socketRef.current || !socketRef.current.connected) {
+                    return alert('Aguarde a conexão com o servidor ser estabelecida!');
+                }
+
                 const cod = Math.floor(1000 + Math.random() * 9000).toString();
+                
                 socketRef.current.emit('CRIAR_SALA', {
                     salaId: cod,
                     jogador: { nome: meuNome, equipe: equipeDesejada },
@@ -109,26 +122,34 @@
             const entrarSala = () => {
                 if (!meuNome.trim()) return alert('Digite seu apelido!');
                 if (!salaId.trim()) return alert('Digite o código!');
+                if (!socketRef.current || !socketRef.current.connected) {
+                    return alert('Aguarde a conexão com o servidor ser estabelecida!');
+                }
+
                 socketRef.current.emit('ENTRAR_SALA', {
-                    salaId: salaId.toUpperCase(),
-                    jogador: { nome: meuNome, equipe: equipeDesejada }
+                    salaId: salaId.trim().toUpperCase(),
+                    jogador: { nome: meuNome, equipe: equipeDesejada === 1 ? 2 : 1 }
                 });
             };
 
             const adicionarBots = () => {
-                socketRef.current.emit('ADICIONAR_BOTS', { salaId });
+                if (socketRef.current && socketRef.current.connected) {
+                    socketRef.current.emit('ADICIONAR_BOTS', { salaId });
+                }
             };
 
             const iniciarPartida = () => {
-                socketRef.current.emit('INICIAR_PARTIDA', { salaId });
+                if (socketRef.current && socketRef.current.connected) {
+                    socketRef.current.emit('INICIAR_PARTIDA', { salaId });
+                }
             };
 
             const jogarCarta = (carta) => {
-                const meuIdx = jogadores.findIndex(j => j.socketId === socketRef.current.id);
+                const meuIdx = jogadores.findIndex(j => j.socketId === socketRef.current?.id);
                 if (meuIdx !== vezJogador) return;
 
                 setMinhasCartas(prev => prev.filter(c => c.id !== carta.id));
-                socketRef.current.emit('JOGAR_CARTA', { salaId, carta, jogadorIdx: meuIdx });
+                socketRef.current?.emit('JOGAR_CARTA', { salaId, carta, jogadorIdx: meuIdx });
             };
 
             const sairDaSala = () => {
@@ -188,6 +209,12 @@
                                     <h2 className="text-2xl font-black text-white">Entrar na Mesa</h2>
                                 </div>
 
+                                <div className="text-center">
+                                    <span className="text-[11px] bg-slate-950 px-3 py-1 rounded-full border border-slate-800 text-amber-400 font-bold">
+                                        {statusConexao}
+                                    </span>
+                                </div>
+
                                 <div>
                                     <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Seu Apelido</label>
                                     <input type="text" placeholder="Ex: Mari" value={meuNome} onChange={e => setMeuNome(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500"/>
@@ -215,10 +242,13 @@
                                 <div className="poker-table rounded-[100px] flex-1 flex flex-col items-center justify-center relative min-h-[420px]">
                                     {statusJogo === 'aguardando' && (
                                         <div className="bg-slate-950/90 p-6 rounded-2xl text-center space-y-4 border border-slate-800 max-w-lg w-full">
-                                            <h3 className="text-xl font-black text-amber-400">Aguardando Jogadores ({jogadores.length}/{modoJogo})</h3>
-                                            <div className="text-sm space-y-1">
+                                            <h3 className="text-xl font-black text-amber-400">Aguardando Jogadores na Sala {salaId} ({jogadores.length}/{modoJogo})</h3>
+                                            <div className="text-sm space-y-2">
                                                 {jogadores.map((j, i) => (
-                                                    <div key={i} className="text-slate-200 font-semibold">{j.nome} - Equipe {j.equipe} {j.isBot ? '(Robô)' : ''}</div>
+                                                    <div key={i} className="text-slate-200 font-semibold bg-slate-900/80 py-1.5 px-3 rounded-lg border border-slate-800 flex justify-between items-center">
+                                                        <span>{j.nome} {j.isBot ? '(Robô)' : ''}</span>
+                                                        <span className="text-xs text-emerald-400 font-bold">Equipe {j.equipe}</span>
+                                                    </div>
                                                 ))}
                                             </div>
                                             {ehHost && (

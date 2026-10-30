@@ -26,9 +26,11 @@ const criarBaralho = () => {
 
 io.on('connection', (socket) => {
     socket.on('CRIAR_SALA', ({ salaId, jogador, modoJogo }) => {
-        socket.join(salaId);
-        salas[salaId] = {
-            id: salaId,
+        const idLimpo = String(salaId).trim().toUpperCase();
+        socket.join(idLimpo);
+
+        salas[idLimpo] = {
+            id: idLimpo,
             host: socket.id,
             modoJogo: modoJogo || 4,
             jogadores: [{ ...jogador, socketId: socket.id, isBot: false }],
@@ -36,22 +38,37 @@ io.on('connection', (socket) => {
             placar: { eq1: 0, eq2: 0 },
             pontosMao: 1
         };
-        io.to(salaId).emit('ATUALIZAR_SALA', salas[salaId]);
+
+        io.to(idLimpo).emit('ATUALIZAR_SALA', salas[idLimpo]);
     });
 
     socket.on('ENTRAR_SALA', ({ salaId, jogador }) => {
-        const sala = salas[salaId];
-        if (!sala) return socket.emit('ERRO', 'Sala não encontrada!');
-        if (sala.jogadores.length >= sala.modoJogo) return socket.emit('ERRO', 'A sala já está cheia!');
+        const idLimpo = String(salaId).trim().toUpperCase();
+        const sala = salas[idLimpo];
 
-        socket.join(salaId);
-        sala.jogadores.push({ ...jogador, socketId: socket.id, isBot: false });
-        io.to(salaId).emit('ATUALIZAR_SALA', sala);
+        if (!sala) {
+            return socket.emit('ERRO', 'Sala não encontrada! Verifique o código digitado.');
+        }
+
+        if (sala.jogadores.length >= sala.modoJogo) {
+            return socket.emit('ERRO', 'A sala já está cheia!');
+        }
+
+        socket.join(idLimpo);
+        
+        // Evita duplicar o mesmo jogador na lista
+        const jaExiste = sala.jogadores.some(j => j.socketId === socket.id);
+        if (!jaExiste) {
+            sala.jogadores.push({ ...jogador, socketId: socket.id, isBot: false });
+        }
+
+        io.to(idLimpo).emit('ATUALIZAR_SALA', sala);
     });
 
     socket.on('ADICIONAR_BOTS', ({ salaId }) => {
-        const sala = salas[salaId];
-        if (!sala || sala.host !== socket.id) return;
+        const idLimpo = String(salaId).trim().toUpperCase();
+        const sala = salas[idLimpo];
+        if (!sala) return;
 
         let numEq1 = sala.jogadores.filter(j => j.equipe === 1).length;
         let numEq2 = sala.jogadores.filter(j => j.equipe === 2).length;
@@ -69,12 +86,14 @@ io.on('connection', (socket) => {
                 isBot: true
             });
         }
-        io.to(salaId).emit('ATUALIZAR_SALA', sala);
+
+        io.to(idLimpo).emit('ATUALIZAR_SALA', sala);
     });
 
     socket.on('INICIAR_PARTIDA', ({ salaId }) => {
-        const sala = salas[salaId];
-        if (!sala || sala.host !== socket.id) return;
+        const idLimpo = String(salaId).trim().toUpperCase();
+        const sala = salas[idLimpo];
+        if (!sala) return;
 
         let baralho = criarBaralho();
         baralho.sort(() => Math.random() - 0.5);
@@ -88,11 +107,12 @@ io.on('connection', (socket) => {
         sala.vezJogador = 0;
         sala.cartasNaMesa = [];
 
-        io.to(salaId).emit('PARTIDA_INICIADA', sala);
+        io.to(idLimpo).emit('PARTIDA_INICIADA', sala);
     });
 
     socket.on('JOGAR_CARTA', ({ salaId, carta, jogadorIdx }) => {
-        const sala = salas[salaId];
+        const idLimpo = String(salaId).trim().toUpperCase();
+        const sala = salas[idLimpo];
         if (!sala) return;
 
         const jogador = sala.jogadores[jogadorIdx];
@@ -110,7 +130,7 @@ io.on('connection', (socket) => {
         sala.cartasNaMesa.push(jogada);
         sala.vezJogador = (sala.vezJogador + 1) % sala.jogadores.length;
 
-        io.to(salaId).emit('CARTA_JOGADA', {
+        io.to(idLimpo).emit('CARTA_JOGADA', {
             jogada,
             proximoJogador: sala.vezJogador,
             cartasNaMesa: sala.cartasNaMesa
