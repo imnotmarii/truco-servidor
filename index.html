@@ -28,8 +28,8 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // COLE AQUI O SEU LINK DO RENDER ENTRE AS ASPAS:
-        const URL_SERVIDOR = " https://truco-servidor.onrender.com";
+        // COLE AQUI O SEU LINK DO RENDER:
+        const URL_SERVIDOR = "https://truco-servidor-1.onrender.com";
 
         const NAIPES = ['♣', '♥', '♠', '♦'];
         const NAIPE_CORES = { '♣': 'text-black', '♠': 'text-black', '♥': 'text-red-600', '♦': 'text-red-600' };
@@ -43,12 +43,9 @@
             const [salaId, setSalaId] = useState('');
             const [emSala, setEmSala] = useState(false);
             const [ehHost, setEhHost] = useState(false);
-            const [statusConexao, setStatusConexao] = useState('');
 
             const [jogadores, setJogadores] = useState([]);
             const [statusJogo, setStatusJogo] = useState('aguardando');
-            const [placar, setPlacar] = useState({ eq1: 0, eq2: 0 });
-            const [pontosMao, setPontosMao] = useState(1);
             const [vezJogador, setVezJogador] = useState(0);
             
             const [vira, setVira] = useState(null);
@@ -58,13 +55,12 @@
             const socketRef = useRef(null);
 
             useEffect(() => {
-                socketRef.current = io(URL_SERVIDOR);
-
-                socketRef.current.on('connect', () => {
-                    setStatusConexao('Conectado ao servidor!');
+                socketRef.current = io(URL_SERVIDOR, {
+                    transports: ['websocket', 'polling']
                 });
 
                 socketRef.current.on('ATUALIZAR_SALA', (sala) => {
+                    setSalaId(sala.id);
                     setJogadores(sala.jogadores);
                     setModoJogo(sala.modoJogo);
                     setEmSala(true);
@@ -89,10 +85,11 @@
 
                 socketRef.current.on('ERRO', (msg) => {
                     alert(msg);
-                    setStatusConexao('');
                 });
 
-                return () => socketRef.current.disconnect();
+                return () => {
+                    if (socketRef.current) socketRef.current.disconnect();
+                };
             }, []);
 
             useEffect(() => {
@@ -102,7 +99,6 @@
             const criarSala = () => {
                 if (!meuNome.trim()) return alert('Digite seu apelido!');
                 const cod = Math.floor(1000 + Math.random() * 9000).toString();
-                setSalaId(cod);
                 socketRef.current.emit('CRIAR_SALA', {
                     salaId: cod,
                     jogador: { nome: meuNome, equipe: equipeDesejada },

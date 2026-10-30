@@ -28,14 +28,15 @@ io.on('connection', (socket) => {
     socket.on('CRIAR_SALA', ({ salaId, jogador, modoJogo }) => {
         socket.join(salaId);
         salas[salaId] = {
+            id: salaId,
             host: socket.id,
             modoJogo: modoJogo || 4,
-            jogadores: [{ ...jogador, socketId: socket.id }],
+            jogadores: [{ ...jogador, socketId: socket.id, isBot: false }],
             statusJogo: 'aguardando',
             placar: { eq1: 0, eq2: 0 },
             pontosMao: 1
         };
-        socket.emit('ATUALIZAR_SALA', salas[salaId]);
+        io.to(salaId).emit('ATUALIZAR_SALA', salas[salaId]);
     });
 
     socket.on('ENTRAR_SALA', ({ salaId, jogador }) => {
@@ -44,7 +45,7 @@ io.on('connection', (socket) => {
         if (sala.jogadores.length >= sala.modoJogo) return socket.emit('ERRO', 'A sala já está cheia!');
 
         socket.join(salaId);
-        sala.jogadores.push({ ...jogador, socketId: socket.id });
+        sala.jogadores.push({ ...jogador, socketId: socket.id, isBot: false });
         io.to(salaId).emit('ATUALIZAR_SALA', sala);
     });
 
@@ -95,6 +96,10 @@ io.on('connection', (socket) => {
         if (!sala) return;
 
         const jogador = sala.jogadores[jogadorIdx];
+        if (jogador && jogador.cartas) {
+            jogador.cartas = jogador.cartas.filter(c => c.id !== carta.id);
+        }
+
         const jogada = {
             jogadorIdx,
             nome: jogador ? jogador.nome : 'Jogador',
@@ -125,4 +130,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Servidor a rodar na porta ${PORT}`));
+server.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
