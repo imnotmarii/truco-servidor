@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Truco Paulista Online</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- React & React DOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel para JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Socket.io Client -->
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <style>
+        body { background-color: #0b1329; color: #ffffff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        .poker-table { background: radial-gradient(circle, #1a5e35 0%, #0d3b20 70%, #061f10 100%); box-shadow: inset 0 0 80px rgba(0,0,0,0.8), 0 0 30px rgba(0,0,0,0.9); border: 14px solid #3d2314; }
+        .card-shadow { box-shadow: 2px 4px 10px rgba(0,0,0,0.5); transition: all 0.2s ease; }
+        .card-shadow:hover { transform: translateY(-8px) scale(1.05); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // COLE AQUI O SEU LINK DO RENDER ENTRE AS ASPAS:
+        const URL_SERVIDOR = "https://truco-servidor.onrender.com";
+
+        const NAIPES = ['♣', '♥', '♠', '♦'];
+        const NAIPE_CORES = { '♣': 'text-black', '♠': 'text-black', '♥': 'text-red-600', '♦': 'text-red-600' };
+
+        function App() {
+            const [aba, setAba] = useState('jogo');
+            const [meuNome, setMeuNome] = useState(localStorage.getItem('truco_nome') || '');
+            const [modoJogo, setModoJogo] = useState(4);
+            const [equipeDesejada, setEquipeDesejada] = useState(1);
+            
+            const [salaId, setSalaId] = useState('');
+            const [emSala, setEmSala] = useState(false);
+            const [ehHost, setEhHost] = useState(false);
+            const [statusConexao, setStatusConexao] = useState('');
+
+            const [jogadores, setJogadores] = useState([]);
+            const [statusJogo, setStatusJogo] = useState('aguardando');
+            const [placar, setPlacar] = useState({ eq1: 0, eq2: 0 });
+            const [pontosMao, setPontosMao] = useState(1);
+            const [vezJogador, setVezJogador] = useState(0);
+            
+            const [vira, setVira] = useState(null);
+            const [minhasCartas, setMinhasCartas] = useState([]);
+            const [cartasNaMesa, setCartasNaMesa] = useState([]);
+
+            const socketRef = useRef(null);
+
+            useEffect(() => {
+                socketRef.current = io(URL_SERVIDOR);
+
+                socketRef.current.on('connect', () => {
+                    setStatusConexao('Conectado ao servidor!');
+                });
+
+                socketRef.current.on('ATUALIZAR_SALA', (sala) => {
+                    setJogadores(sala.jogadores);
+                    setModoJogo(sala.modoJogo);
+                    setEmSala(true);
+                    setEhHost(sala.host === socketRef.current.id);
+                });
+
+                socketRef.current.on('PARTIDA_INICIADA', (sala) => {
+                    setStatusJogo('jogando');
+                    setJogadores(sala.jogadores);
+                    setVira(sala.vira);
+                    setVezJogador(sala.vezJogador);
+                    setCartasNaMesa([]);
+
+                    const eu = sala.jogadores.find(j => j.socketId === socketRef.current.id);
+                    if (eu && eu.cartas) setMinhasCartas(eu.cartas);
+                });
+
+                socketRef.current.on('CARTA_JOGADA', ({ jogada, proximoJogador, cartasNaMesa }) => {
+                    setCartasNaMesa(cartasNaMesa);
+                    setVezJogador(proximoJogador);
+                });
+
+                socketRef.current.on('ERRO', (msg) => {
+                    alert(msg);
+                    setStatusConexao('');
+                });
+
+                return () => socketRef.current.disconnect();
+            }, []);
+
+            useEffect(() => {
+                if (meuNome) localStorage.setItem('truco_nome', meuNome);
+            }, [meuNome]);
+
+            const criarSala = () => {
+                if (!meuNome.trim()) return alert('Digite seu apelido!');
+                const cod = Math.floor(1000 + Math.random() * 9000).toString();
+                setSalaId(cod);
+                socketRef.current.emit('CRIAR_SALA', {
+                    salaId: cod,
+                    jogador: { nome: meuNome, equipe: equipeDesejada },
+                    modoJogo
+                });
+            };
+
+            const entrarSala = () => {
+                if (!meuNome.trim()) return alert('Digite seu apelido!');
+                if (!salaId.trim()) return alert('Digite o código!');
+                socketRef.current.emit('ENTRAR_SALA', {
+                    salaId: salaId.toUpperCase(),
+                    jogador: { nome: meuNome, equipe: equipeDesejada }
+                });
+            };
+
+            const adicionarBots = () => {
+                socketRef.current.emit('ADICIONAR_BOTS', { salaId });
+            };
+
+            const iniciarPartida = () => {
+                socketRef.current.emit('INICIAR_PARTIDA', { salaId });
+            };
+
+            const jogarCarta = (carta) => {
+                const meuIdx = jogadores.findIndex(j => j.socketId === socketRef.current.id);
+                if (meuIdx !== vezJogador) return;
+
+                setMinhasCartas(prev => prev.filter(c => c.id !== carta.id));
+                socketRef.current.emit('JOGAR_CARTA', { salaId, carta, jogadorIdx: meuIdx });
+            };
+
+            const sairDaSala = () => {
+                window.location.reload();
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
+                    <header className="bg-slate-900 border-b border-slate-800 px-6 py-3 flex justify-between items-center shadow-lg">
+                        <div className="flex items-center space-x-3">
+                            <span className="text-emerald-500 text-3xl"><i className="fa-solid fa-clover"></i></span>
+                            <div>
+                                <h1 className="font-extrabold text-xl tracking-wide text-emerald-400">Truco Paulista Online</h1>
+                                <p className="text-xs text-slate-400">Baralho Limpo • {modoJogo} Pessoas</p>
+                            </div>
+                        </div>
+
+                        <div className="flex space-x-2 items-center">
+                            {emSala && (
+                                <button onClick={sairDaSala} className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-xs flex items-center space-x-1 transition mr-2">
+                                    <i className="fa-solid fa-right-from-bracket"></i>
+                                    <span>Sair da Sala</span>
+                                </button>
+                            )}
+                            <button onClick={() => setAba('jogo')} className={`px-4 py-2 rounded-lg font-bold text-sm transition ${aba === 'jogo' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                                Mesa de Jogo
+                            </button>
+                            <button onClick={() => setAba('regras')} className={`px-4 py-2 rounded-lg font-bold text-sm transition ${aba === 'regras' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                                Regras
+                            </button>
+                        </div>
+                    </header>
+
+                    <main className="flex-1 flex flex-col p-4 max-w-7xl w-full mx-auto">
+                        {aba === 'regras' && (
+                            <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-4 max-w-3xl mx-auto my-auto">
+                                <h2 className="text-2xl font-bold text-emerald-400 mb-4 border-b border-slate-800 pb-2">Regras do Truco Paulista</h2>
+                                <p className="text-slate-300">O Truco Paulista é jogado com baralho limpo (40 cartas, sem 8, 9, 10). A cada rodada, uma carta é virada (o Vira), e as manilhas são definidas como a carta imediatamente superior na ordem dos valores.</p>
+                                <div className="bg-slate-950 p-4 rounded-xl">
+                                    <h3 className="font-bold text-amber-400 mb-2">Ordem Fixa das Manilhas (Por Naipe):</h3>
+                                    <ul className="grid grid-cols-2 gap-2 text-sm">
+                                        <li>♣ Zap (Paus)</li>
+                                        <li className="text-red-400">♥ Copas</li>
+                                        <li>♠ Espadas</li>
+                                        <li className="text-red-400">♦ Ouros</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        )}
+
+                        {aba === 'jogo' && !emSala && (
+                            <div className="my-auto max-w-md w-full mx-auto bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl space-y-4">
+                                <div className="text-center space-y-2">
+                                    <div className="inline-block p-4 bg-emerald-500/10 rounded-full text-emerald-400 text-4xl mb-2">
+                                        <i className="fa-solid fa-gamepad"></i>
+                                    </div>
+                                    <h2 className="text-2xl font-black text-white">Entrar na Mesa</h2>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Seu Apelido</label>
+                                    <input type="text" placeholder="Ex: Mari" value={meuNome} onChange={e => setMeuNome(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500"/>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Modo de Jogo</label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button onClick={() => setModoJogo(4)} className={`py-3 rounded-xl font-bold border ${modoJogo === 4 ? 'bg-emerald-600 border-emerald-500' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>4 Pessoas (2v2)</button>
+                                        <button onClick={() => setModoJogo(6)} className={`py-3 rounded-xl font-bold border ${modoJogo === 6 ? 'bg-emerald-600 border-emerald-500' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>6 Pessoas (3v3)</button>
+                                    </div>
+                                </div>
+
+                                <button onClick={criarSala} className="w-full bg-emerald-500 hover:bg-emerald-600 font-extrabold text-slate-950 py-3.5 rounded-xl shadow-lg transition">Criar Nova Sala</button>
+
+                                <div className="flex space-x-2 pt-2">
+                                    <input type="text" placeholder="Código da Sala" value={salaId} onChange={e => setSalaId(e.target.value.toUpperCase())} className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white uppercase"/>
+                                    <button onClick={entrarSala} className="bg-slate-800 hover:bg-slate-700 text-white font-bold px-5 rounded-xl">Entrar</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {aba === 'jogo' && emSala && (
+                            <div className="flex-1 flex flex-col space-y-4">
+                                <div className="poker-table rounded-[100px] flex-1 flex flex-col items-center justify-center relative min-h-[420px]">
+                                    {statusJogo === 'aguardando' && (
+                                        <div className="bg-slate-950/90 p-6 rounded-2xl text-center space-y-4 border border-slate-800 max-w-lg w-full">
+                                            <h3 className="text-xl font-black text-amber-400">Aguardando Jogadores ({jogadores.length}/{modoJogo})</h3>
+                                            <div className="text-sm space-y-1">
+                                                {jogadores.map((j, i) => (
+                                                    <div key={i} className="text-slate-200 font-semibold">{j.nome} - Equipe {j.equipe} {j.isBot ? '(Robô)' : ''}</div>
+                                                ))}
+                                            </div>
+                                            {ehHost && (
+                                                <div className="space-y-2 pt-2">
+                                                    {jogadores.length < modoJogo && (
+                                                        <button onClick={adicionarBots} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs transition">
+                                                            <i className="fa-solid fa-robot mr-2"></i>Completar Vagas com Robôs
+                                                        </button>
+                                                    )}
+                                                    <button onClick={iniciarPartida} className="w-full bg-emerald-500 hover:bg-emerald-600 font-black text-slate-950 py-3 rounded-xl shadow-lg transition">
+                                                        Iniciar Partida
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {statusJogo === 'jogando' && (
+                                        <div className="flex flex-col items-center space-y-6">
+                                            <div className="flex gap-3 min-h-[100px] p-4 bg-black/20 rounded-3xl border border-white/5">
+                                                {cartasNaMesa.map((c, i) => (
+                                                    <div key={i} className="w-14 h-20 bg-white rounded-lg p-1.5 flex flex-col justify-between text-slate-900 font-bold shadow-xl">
+                                                        <span className={`text-xs ${NAIPE_CORES[c.carta.naipe]}`}>{c.carta.valor}</span>
+                                                        <span className={`text-xl text-center ${NAIPE_CORES[c.carta.naipe]}`}>{c.carta.naipe}</span>
+                                                        <span className={`text-xs text-right ${NAIPE_CORES[c.carta.naipe]}`}>{c.carta.valor}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <div className="flex gap-3">
+                                                {minhasCartas.map(c => (
+                                                    <button key={c.id} onClick={() => jogarCarta(c)} className="w-16 h-24 bg-white rounded-xl p-2 card-shadow text-slate-900 font-bold flex flex-col justify-between">
+                                                        <span className={`text-sm ${NAIPE_CORES[c.naipe]}`}>{c.valor}</span>
+                                                        <span className={`text-2xl text-center ${NAIPE_CORES[c.naipe]}`}>{c.naipe}</span>
+                                                        <span className={`text-sm text-right ${NAIPE_CORES[c.naipe]}`}>{c.valor}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>

@@ -95,10 +95,6 @@ io.on('connection', (socket) => {
         if (!sala) return;
 
         const jogador = sala.jogadores[jogadorIdx];
-        if (jogador) {
-            jogador.cartas = (jogador.cartas || []).filter(c => c.id !== carta.id);
-        }
-
         const jogada = {
             jogadorIdx,
             nome: jogador ? jogador.nome : 'Jogador',
