@@ -4,8 +4,16 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
+
+// Libera CORS e força suporte a transportes HTTP/Polling + WebSockets
 const io = new Server(server, {
-    cors: { origin: "*" }
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"],
+        allowedHeaders: ["*"],
+        credentials: true
+    },
+    transports: ['polling', 'websocket']
 });
 
 const salas = {};
@@ -25,6 +33,8 @@ const criarBaralho = () => {
 };
 
 io.on('connection', (socket) => {
+    console.log('Jogador conectado:', socket.id);
+
     socket.on('CRIAR_SALA', ({ salaId, jogador, modoJogo }) => {
         const idLimpo = String(salaId).trim().toUpperCase();
         socket.join(idLimpo);
@@ -47,7 +57,7 @@ io.on('connection', (socket) => {
         const sala = salas[idLimpo];
 
         if (!sala) {
-            return socket.emit('ERRO', 'Sala não encontrada! Verifique o código digitado.');
+            return socket.emit('ERRO', 'Sala não encontrada! Verifique o código.');
         }
 
         if (sala.jogadores.length >= sala.modoJogo) {
@@ -56,7 +66,6 @@ io.on('connection', (socket) => {
 
         socket.join(idLimpo);
         
-        // Evita duplicar o mesmo jogador na lista
         const jaExiste = sala.jogadores.some(j => j.socketId === socket.id);
         if (!jaExiste) {
             sala.jogadores.push({ ...jogador, socketId: socket.id, isBot: false });
@@ -150,4 +159,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
+server.listen(PORT, () => console.log(`Servidor de Truco rodando na porta ${PORT}`));
